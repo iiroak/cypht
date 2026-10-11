@@ -1,0 +1,164 @@
+# Construye la imagen del fork y la publica en GHCR, luego avisa a Coolify.
+#
+# Este workflow es propio del fork iiroak/cypht: no existe en upstream y se salta
+# en cualquier otro repositorio. Los workflows de imagen de upstream estan limitados
+# a `cypht-org`, asi que no compiten con este.
+#
+# Flujo: push a la rama -> lint -> build amd64 -> push a ghcr.io/iiroak/cypht
+#        -> POST /api/v1/deploy a Coolify con la lista de recursos.
+#
+# Etiquetas publicadas:
+#   :mcp            movil, siempre la cabeza de la rama (es la que siguen las instancias)
+#   :mcp-<sha>      inmutable, para fijar una version concreta
+#
+# Para que el deploy automatico funcione hacen falta, en Settings del repositorio:
+#   secret  COOLIFY_URL        p. ej. https://coolify.iroak.dev
+#   secret  COOLIFY_TOKEN      token de Coolify con permiso *solo* `deploy`
+#   var     COOLIFY_RESOURCES  UUIDs de los recursos, separados por coma
+# Si falta el secret, el build igual publica la imagen y el deploy se omite.
+
+name: Build MCP image
+
+on:
+  push:
+    branches:
+      - feature/mcp-server
+  workflow_dispatch:
+    inputs:
+      deploy:
+        description: 'Avisar a Coolify al terminar'
+        type: boolean
+        default: true
+
+concurrency:
+  group: mcp-image-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    name: Build and push
+    if: github.repository_owner == 'iiroak'
+    runs-on: ubuntu-latest
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+      version: ${{ steps.meta.outputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up PHP
+        # Fijar el interprete en vez de confiar en el que traiga el runner: la imagen usa 8.3.
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          tools: composer
+          coverage: none
+
+      - name: Lint PHP sources
+        run: |
+          set -euo pipefail
+          # Una imagen con un error de sintaxis arranca y falla al servir: cortar antes de publicarla.
+          # `php -l` solo acepta un archivo por invocacion, de ahi el -n 1.
+          find config lib modules scripts language tests index.php -name '*.php' -print0 \
+            | xargs -0 -P 4 -n 1 php -l > /dev/null
+          composer validate --no-check-publish --no-check-all
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Image metadata
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/cypht
+          tags: |
+            type=raw,value=mcp
+            type=sha,prefix=mcp-,format=short
+          labels: |
+            org.opencontainers.image.title=Cypht (fork iiroak, module set mcp)
+            org.opencontainers.image.description=Cypht con el module set mcp, fix de TLS de PDO y limites de espera IMAP
+
+      - name: Build and push
+        id: build
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: docker/Dockerfile
+          # CT102 es amd64. Añadir arm64 aqui si algun destino lo necesita.
+          platforms: linux/amd64
+          push: true
+          provenance: false
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Summary
+        run: |
+          {
+            echo '### Imagen publicada'
+            echo
+            echo "| Dato | Valor |"
+            echo "|---|---|"
+            echo "| Digest | \`${{ steps.build.outputs.digest }}\` |"
+            echo "| Movil | \`ghcr.io/${{ github.repository_owner }}/cypht:mcp\` |"
+            echo "| Fija | \`ghcr.io/${{ github.repository_owner }}/cypht:${{ steps.meta.outputs.version }}\` |"
+            echo
+            echo 'Para fijar una instancia a esta version, poner en su variable \`CYPHT_IMAGE\`:'
+            echo
+            echo '```'
+            echo "ghcr.io/${{ github.repository_owner }}/cypht@${{ steps.build.outputs.digest }}"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  deploy:
+    name: Redeploy in Coolify
+    needs: build
+    if: >-
+      github.repository_owner == 'iiroak' &&
+      (github.event_name == 'push' || inputs.deploy)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger deploy
+        env:
+          COOLIFY_URL: ${{ secrets.COOLIFY_URL }}
+          COOLIFY_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+          COOLIFY_RESOURCES: ${{ vars.COOLIFY_RESOURCES }}
+        run: |
+          set -euo pipefail
+          if [ -z "${COOLIFY_TOKEN:-}" ] || [ -z "${COOLIFY_URL:-}" ]; then
+            echo "Coolify no esta configurado en este repositorio: se omite el deploy." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          if [ -z "${COOLIFY_RESOURCES:-}" ]; then
+            echo "::error::Falta la variable COOLIFY_RESOURCES con los UUIDs de los recursos."
+            exit 1
+          fi
+          body=$(mktemp)
+          # El token solo tiene permiso de deploy: no puede leer ni escribir configuracion.
+          code=$(curl -sS -o "$body" -w '%{http_code}' -X POST \
+            -H "Authorization: Bearer ${COOLIFY_TOKEN}" \
+            -H 'Accept: application/json' \
+            "${COOLIFY_URL%/}/api/v1/deploy?uuid=${COOLIFY_RESOURCES}")
+          echo "HTTP $code"
+          if [ "$code" != "200" ] && [ "$code" != "201" ]; then
+            # El cuerpo de error de Coolify no incluye secretos.
+            cat "$body"
+            exit 1
+          fi
+          {
+            echo '### Deploy solicitado'
+            echo
+            echo "Recursos: \`${COOLIFY_RESOURCES}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
