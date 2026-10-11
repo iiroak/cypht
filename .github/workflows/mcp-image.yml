@@ -4,7 +4,7 @@
 # en cualquier otro repositorio. Los workflows de imagen de upstream estan limitados
 # a `cypht-org`, asi que no compiten con este.
 #
-# Flujo: push a la rama -> lint -> build amd64 -> push a ghcr.io/iiroak/cypht
+# Flujo: push a la rama -> lint -> build amd64 -> push a ghcr.io/iiroak/cypht-mcp
 #        -> POST /api/v1/deploy a Coolify con la lista de recursos.
 #
 # Etiquetas publicadas:
@@ -81,7 +81,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v6
         with:
-          images: ghcr.io/${{ github.repository_owner }}/cypht
+          images: ghcr.io/${{ github.repository_owner }}/cypht-mcp
           tags: |
             type=raw,value=mcp
             type=sha,prefix=mcp-,format=short
@@ -112,13 +112,13 @@ jobs:
             echo "| Dato | Valor |"
             echo "|---|---|"
             echo "| Digest | \`${{ steps.build.outputs.digest }}\` |"
-            echo "| Movil | \`ghcr.io/${{ github.repository_owner }}/cypht:mcp\` |"
-            echo "| Fija | \`ghcr.io/${{ github.repository_owner }}/cypht:${{ steps.meta.outputs.version }}\` |"
+            echo "| Movil | \`ghcr.io/${{ github.repository_owner }}/cypht-mcp:mcp\` |"
+            echo "| Fija | \`ghcr.io/${{ github.repository_owner }}/cypht-mcp:${{ steps.meta.outputs.version }}\` |"
             echo
             echo 'Para fijar una instancia a esta version, poner en su variable \`CYPHT_IMAGE\`:'
             echo
             echo '```'
-            echo "ghcr.io/${{ github.repository_owner }}/cypht@${{ steps.build.outputs.digest }}"
+            echo "ghcr.io/${{ github.repository_owner }}/cypht-mcp@${{ steps.build.outputs.digest }}"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
