@@ -23,6 +23,13 @@ on:
   push:
     branches:
       - feature/mcp-server
+    # Un cambio de solo documentacion no cambia el comportamiento de la imagen, y cada build
+    # termina recreando los contenedores de produccion. Los .md se quedan fuera: el README que
+    # viaja dentro de la imagen puede quedar un commit atras hasta el siguiente cambio de codigo.
+    paths-ignore:
+      - '**.md'
+      - 'LICENSE'
+      - 'RELEASE_NOTES'
   workflow_dispatch:
     inputs:
       deploy:
