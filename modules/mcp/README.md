@@ -183,3 +183,9 @@ root:
 ```
 vendor/bin/phpunit --configuration tests/phpunit/imap-timeouts.xml
 ```
+
+## Imagen de contenedor
+
+GitHub Actions construye esta rama y publica la imagen en
+`ghcr.io/iiroak/cypht-mcp`: la etiqueta `mcp` sigue la cabeza de la rama y cada
+build deja ademas una etiqueta inmutable `mcp-<sha>`.
