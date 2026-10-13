@@ -943,11 +943,19 @@ function Message_List() {
             }
             self.set_row_events();
         }
-        if (getPageNameParam() == 'search' && hm_run_search() == "0") {
-            Hm_Timer.add_job(self.load_sources, interval, true);
+        if (Hm_Utils.get_from_global('disable_email_auto_refresh', false)) {
+            // Still fetch once when opening a list; only suppress later polling.
+            if (!(getPageNameParam() == 'search' && hm_run_search() == "0")) {
+                this.load_sources();
+            }
         }
         else {
-            Hm_Timer.add_job(this.load_sources, interval);
+            if (getPageNameParam() == 'search' && hm_run_search() == "0") {
+                Hm_Timer.add_job(self.load_sources, interval, true);
+            }
+            else {
+                Hm_Timer.add_job(this.load_sources, interval);
+            }
         }
     };
 

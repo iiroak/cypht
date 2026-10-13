@@ -23,13 +23,15 @@ $(function() {
         }
     });
 
-    // refresh the unread messages state
-    setInterval(() => {
-        // undefined_undefined: load with no filter and no keyword
-        new Hm_MessagesStore('unread', getParam('list_page') || 1, 'undefined_undefined').load(true, true).then((store) => {
-            store.newMessages.forEach((messageRow) => {
-                triggerNewMessageEvent($(messageRow).data('uid'), $(messageRow)[0]);
+    if (!Hm_Utils.get_from_global('disable_email_auto_refresh', false)) {
+        // refresh the unread messages state
+        setInterval(() => {
+            // undefined_undefined: load with no filter and no keyword
+            new Hm_MessagesStore('unread', getParam('list_page') || 1, 'undefined_undefined').load(true, true).then((store) => {
+                store.newMessages.forEach((messageRow) => {
+                    triggerNewMessageEvent($(messageRow).data('uid'), $(messageRow)[0]);
+                });
             });
-        });
-    }, 60000);
+        }, 60000);
+    }
 });

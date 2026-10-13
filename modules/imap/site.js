@@ -549,14 +549,19 @@ var setup_imap_folder_page = async function(listPath, listPage = 1) {
 
     handleMessagesDragAndDrop();
 
-    // Refresh in the background each 60 seconds
-    const interval = setInterval(async () => {
-        select_imap_folder(listPath, listPage, true, true);
-    }, 60000);
+    // Refresh in the background each 60 seconds unless this instance is manual-only.
+    let interval = null;
+    if (!Hm_Utils.get_from_global('disable_email_auto_refresh', false)) {
+        interval = setInterval(async () => {
+            select_imap_folder(listPath, listPage, true, true);
+        }, 60000);
+    }
 
     // Return cleanup function to clear interval when page unmounts
     return () => {
-        clearInterval(interval);
+        if (interval !== null) {
+            clearInterval(interval);
+        }
     };
 };
 
@@ -1307,7 +1312,7 @@ $(function() {
         $('.imap_move').on("click", function() { return false; });
     }
 
-    if (getListPathParam() !== 'unread') {
+    if (!Hm_Utils.get_from_global('disable_email_auto_refresh', false) && getListPathParam() !== 'unread') {
         if (typeof hm_data_sources_background === 'function') {
             globals.Hm_Background_Unread = new Message_List();
             globals.Hm_Background_Unread.background = true;

@@ -1,5 +1,9 @@
 'use strict';
 
+// This app instance opts into the site module to disable background mailbox polling.
+// Manual refresh buttons still work when the user wants to fetch messages.
+globals.disable_email_auto_refresh = true;
+
 /*
  * Update intervals. Uncomment and change the values to override
  * the defaults. Current values are set to the defaults
